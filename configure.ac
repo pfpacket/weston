@@ -272,6 +272,9 @@ PKG_CHECK_MODULES(PNG, [libpng])
 PKG_CHECK_MODULES(WEBP, [libwebp], [have_webp=yes], [have_webp=no])
 AS_IF([test "x$have_webp" = "xyes"],
       [AC_DEFINE([HAVE_WEBP], [1], [Have webp])])
+PKG_CHECK_MODULES(PANGO, [pangocairo], [have_pango=yes], [have_pango=no])
+AS_IF([test "x$have_pango" = "xyes"],
+      [AC_DEFINE([HAVE_PANGO], [1], [Have pango support])])
 
 AC_ARG_ENABLE(vaapi-recorder, [  --enable-vaapi-recorder],,
 	      enable_vaapi_recorder=auto)
@@ -335,8 +338,6 @@ if test x$enable_clients = xyes; then
 	  [AC_DEFINE([HAVE_CAIRO_EGL], [1], [Have cairo-egl])],
 	  [AC_ERROR([cairo-egl not used because $CAIRO_EGL_PKG_ERRORS])])],
   [have_cairo_egl=no])
-
-  PKG_CHECK_MODULES(PANGO, [pangocairo], [have_pango=yes], [have_pango=no])
 fi
 
 AC_ARG_ENABLE(resize-optimization,

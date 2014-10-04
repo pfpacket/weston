@@ -2031,6 +2031,8 @@ weston_wm_create(struct weston_xserver *wxs, int fd)
 	xcb_screen_iterator_t s;
 	uint32_t values[1];
 	xcb_atom_t supported[3];
+	char *fonts;
+	struct weston_config_section *section;
 
 	wm = zalloc(sizeof *wm);
 	if (wm == NULL)
@@ -2076,7 +2078,10 @@ weston_wm_create(struct weston_xserver *wxs, int fd)
 	xcb_composite_redirect_subwindows(wm->conn, wm->screen->root,
 					  XCB_COMPOSITE_REDIRECT_MANUAL);
 
-	wm->theme = theme_create();
+	section = weston_config_get_section(wxs->compositor->config, "shell", NULL, NULL);
+	weston_config_section_get_string(section, "fonts", &fonts, NULL);
+	wm->theme = theme_create_with_fonts(fonts);
+	free(fonts);
 
 	supported[0] = wm->atom.net_wm_moveresize;
 	supported[1] = wm->atom.net_wm_state;

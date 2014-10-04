@@ -113,6 +113,8 @@ struct display {
 
 	struct theme *theme;
 
+	struct weston_config *config;
+
 	struct wl_cursor_theme *cursor_theme;
 	struct wl_cursor **cursors;
 
@@ -1279,18 +1281,15 @@ static const struct cursor_alternatives cursors[] = {
 static void
 create_cursors(struct display *display)
 {
-	struct weston_config *config;
 	struct weston_config_section *s;
 	int size;
 	char *theme = NULL;
 	unsigned int i, j;
 	struct wl_cursor *cursor;
 
-	config = weston_config_parse("weston.ini");
-	s = weston_config_get_section(config, "shell", NULL, NULL);
+	s = weston_config_get_section(display->config, "shell", NULL, NULL);
 	weston_config_section_get_string(s, "cursor-theme", &theme, NULL);
 	weston_config_section_get_int(s, "cursor-size", &size, 32);
-	weston_config_destroy(config);
 
 	display->cursor_theme = wl_cursor_theme_load(theme, size, display->shm);
 	if (!display->cursor_theme) {
@@ -5439,6 +5438,8 @@ struct display *
 display_create(int *argc, char *argv[])
 {
 	struct display *d;
+	char *fonts;
+	struct weston_config_section *s;
 
 	wl_log_set_handler_client(log_handler);
 
@@ -5488,9 +5489,14 @@ display_create(int *argc, char *argv[])
 			"falling back to software rendering and wl_shm.\n");
 #endif
 
+	d->config = weston_config_parse("weston.ini");
+
 	create_cursors(d);
 
-	d->theme = theme_create();
+	s = weston_config_get_section(d->config, "shell", NULL, NULL);
+	weston_config_section_get_string(s, "fonts", &fonts, NULL);
+	d->theme = theme_create_with_fonts(fonts);
+	free(fonts);
 
 	wl_list_init(&d->window_list);
 
@@ -5565,6 +5571,8 @@ display_destroy(struct display *display)
 	if (!(display->display_fd_events & EPOLLERR) &&
 	    !(display->display_fd_events & EPOLLHUP))
 		wl_display_flush(display->display);
+
+	weston_config_destroy(display->config);
 
 	wl_display_disconnect(display->display);
 	free(display);

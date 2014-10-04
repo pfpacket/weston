@@ -33,9 +33,42 @@
 #include "cairo-util.h"
 
 #include "image-loader.h"
-#include "config-parser.h"
+#include "zalloc.h"
 
 #define ARRAY_LENGTH(a) (sizeof (a) / sizeof (a)[0])
+#define DEFAULT_FONT_FAMILY "sans"
+#define DEFAULT_FONT_SIZE 14
+
+struct font_entry {
+	struct wl_list link;
+	char *name;
+};
+
+static struct font_entry *
+font_entry_create(char *fontname)
+{
+	struct font_entry *font = zalloc(sizeof *font);
+
+	if (!font)
+		return NULL;
+
+	font->name = strdup(fontname);
+	return font;
+}
+
+static void
+font_entry_destroy(struct font_entry *font)
+{
+	free(font->name);
+	free(font);
+}
+
+static struct font_entry *
+font_entry_list_front(struct wl_list *list)
+{
+	struct font_entry *font;
+	return wl_container_of(list, font, link);
+}
 
 void
 surface_flush_device(cairo_surface_t *surface)
@@ -337,8 +370,29 @@ theme_set_background_source(struct theme *t, cairo_t *cr, uint32_t flags)
 	}
 }
 
+static void
+insert_font_family_list(struct wl_list *title_fonts, const char *fonts)
+{
+	char *fontlist, *str, *token, *saveptr;
+	struct wl_list *current = title_fonts;
+
+	if (!fonts || !(fontlist = strdup(fonts)))
+		return;
+
+	for (str = fontlist; (token = strtok_r(str, ",", &saveptr)) != NULL;) {
+		struct font_entry *font = font_entry_create(token);
+
+		if (font) {
+			wl_list_insert(current, &font->link);
+			current = &font->link;
+		}
+		str = NULL;
+	}
+	free(fontlist);
+}
+
 struct theme *
-theme_create(void)
+theme_create_with_fonts(const char *fonts)
 {
 	struct theme *t;
 	cairo_t *cr;
@@ -346,6 +400,10 @@ theme_create(void)
 	t = malloc(sizeof *t);
 	if (t == NULL)
 		return NULL;
+
+	wl_list_init(&t->title_fonts);
+	insert_font_family_list(&t->title_fonts,
+		fonts ? fonts : DEFAULT_FONT_FAMILY);
 
 	t->margin = 32;
 	t->width = 6;
@@ -402,14 +460,96 @@ theme_create(void)
 	return NULL;
 }
 
+struct theme *
+theme_create(void)
+{
+	return theme_create_with_fonts(NULL);
+}
+
 void
 theme_destroy(struct theme *t)
 {
+	struct font_entry *font, *next;
+
+	wl_list_for_each_safe(font, next, &t->title_fonts, link)
+		font_entry_destroy(font);
 	cairo_surface_destroy(t->active_frame);
 	cairo_surface_destroy(t->inactive_frame);
 	cairo_surface_destroy(t->shadow);
 	free(t);
 }
+
+#ifdef HAVE_PANGO
+#include <pango/pangocairo.h>
+
+#define DEFAULT_FONT_WEIGHT PANGO_WEIGHT_BOLD
+
+static void
+pango_layout_set_fallback(PangoLayout *layout, gboolean fallback)
+{
+	PangoAttrList *list = pango_layout_get_attributes(layout);
+	PangoAttrList *attr_list = list ? list : pango_attr_list_new();
+
+	if (!attr_list)
+		return;
+
+	PangoAttribute *fb_attr = pango_attr_fallback_new(fallback);
+	pango_attr_list_change(attr_list, fb_attr);
+	pango_layout_set_attributes(layout, attr_list);
+
+	if (!list)
+		pango_attr_list_unref(attr_list);
+}
+
+static PangoFontDescription *
+pango_font_description_create(const char *font,
+			double size, PangoWeight weight)
+{
+	PangoFontDescription *fontdesc =
+		pango_font_description_from_string(font);
+
+	pango_font_description_set_weight(fontdesc, weight);
+	pango_font_description_set_absolute_size(fontdesc, size * PANGO_SCALE);
+	return fontdesc;
+}
+
+static void
+pango_layout_set_best_font(PangoLayout *layout,
+		struct wl_list *fonts, const char *text)
+{
+	struct font_entry *font, *first_font = NULL, *best_font = NULL;
+
+	pango_layout_set_text(layout, text, -1);
+	pango_layout_set_fallback(layout, FALSE);
+
+	wl_list_for_each(font, fonts, link) {
+		PangoFontDescription *fontdesc =
+			pango_font_description_create(font->name,
+				DEFAULT_FONT_SIZE, DEFAULT_FONT_WEIGHT);
+
+		pango_layout_set_font_description(layout, fontdesc);
+		pango_font_description_free(fontdesc);
+		if (!pango_layout_get_unknown_glyphs_count(layout)) {
+			best_font = font;
+			break;
+		}
+
+		if (!first_font)
+			first_font = font;
+	}
+
+	if (!best_font && first_font) {
+		PangoFontDescription *fontdesc =
+			pango_font_description_create(first_font->name,
+				DEFAULT_FONT_SIZE, DEFAULT_FONT_WEIGHT);
+
+		pango_layout_set_font_description(layout, fontdesc);
+		pango_font_description_free(fontdesc);
+	}
+
+	pango_layout_set_fallback(layout, TRUE);
+}
+#endif
 
 void
 theme_render_frame(struct theme *t,
@@ -417,10 +557,16 @@ theme_render_frame(struct theme *t,
 		   const char *title, struct wl_list *buttons,
 		   uint32_t flags)
 {
+	cairo_surface_t *source;
+#ifdef HAVE_PANGO
+	PangoLayout *layout = pango_cairo_create_layout(cr);
+	PangoRectangle extents;
+	int x, y, margin, top_margin;
+#else
 	cairo_text_extents_t extents;
 	cairo_font_extents_t font_extents;
-	cairo_surface_t *source;
 	int x, y, margin, top_margin;
+#endif
 
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 	cairo_set_source_rgba(cr, 0, 0, 0, 0);
@@ -458,31 +604,53 @@ theme_render_frame(struct theme *t,
 		cairo_clip(cr);
 
 		cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-		cairo_select_font_face(cr, "sans",
+#ifdef HAVE_PANGO
+		pango_layout_set_best_font(layout, &t->title_fonts, title);
+		pango_layout_get_pixel_extents(layout, NULL, &extents);
+		x = (width - extents.width) / 2;
+		y = margin + (t->titlebar_height - extents.height) / 2;
+#else
+		cairo_select_font_face(cr,
+				       font_entry_list_front(&t->title_fonts)->name,
 				       CAIRO_FONT_SLANT_NORMAL,
 				       CAIRO_FONT_WEIGHT_BOLD);
-		cairo_set_font_size(cr, 14);
+		cairo_set_font_size(cr, DEFAULT_FONT_SIZE);
 		cairo_text_extents(cr, title, &extents);
 		cairo_font_extents (cr, &font_extents);
 		x = (width - extents.width) / 2;
 		y = margin +
 			(t->titlebar_height -
-			 font_extents.ascent - font_extents.descent) / 2 +
+			font_extents.ascent - font_extents.descent) / 2 +
 			font_extents.ascent;
+#endif
 
 		if (flags & THEME_FRAME_ACTIVE) {
 			cairo_move_to(cr, x + 1, y  + 1);
 			cairo_set_source_rgb(cr, 1, 1, 1);
+#ifdef HAVE_PANGO
+			pango_cairo_show_layout(cr, layout);
+			cairo_move_to(cr, x, y);
+			cairo_set_source_rgb(cr, 0, 0, 0);
+			pango_cairo_show_layout(cr, layout);
+#else
 			cairo_show_text(cr, title);
 			cairo_move_to(cr, x, y);
 			cairo_set_source_rgb(cr, 0, 0, 0);
 			cairo_show_text(cr, title);
+#endif
 		} else {
 			cairo_move_to(cr, x, y);
 			cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
+#ifdef HAVE_PANGO
+			pango_cairo_show_layout(cr, layout);
+#else
 			cairo_show_text(cr, title);
+#endif
 		}
 	}
+#ifdef HAVE_PANGO
+	g_object_unref(layout);
+#endif
 }
 
 enum theme_location

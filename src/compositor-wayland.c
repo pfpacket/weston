@@ -738,7 +738,8 @@ wayland_output_set_windowed(struct wayland_output *output)
 	struct wayland_compositor *c =
 		(struct wayland_compositor *)output->base.compositor;
 	int tlen;
-	char *title;
+	char *title, *fonts;
+	struct weston_config_section *s;
 
 	if (output->frame)
 		return 0;
@@ -755,7 +756,11 @@ wayland_output_set_windowed(struct wayland_output *output)
 	}
 
 	if (!c->theme) {
-		c->theme = theme_create();
+		s = weston_config_get_section(c->base.config, "shell", NULL, NULL);
+		weston_config_section_get_string(s, "fonts", &fonts, "");
+		c->theme = theme_create_with_fonts(fonts);
+		free(fonts);
+
 		if (!c->theme) {
 			free(title);
 			return -1;

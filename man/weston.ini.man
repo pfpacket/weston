@@ -260,6 +260,9 @@ sets the path to lock screen background image (string). (tablet shell only)
 .TP 7
 .BI "homescreen=" path
 sets the path to home screen background image (string). (tablet shell only)
+.TP 7
+.BI "fonts=" font-families
+sets the font family nams separated by commas (string). (title fonts only for now)
 .RE
 .SH "LAUNCHER SECTION"
 There can be multiple launcher sections, one for each launcher.

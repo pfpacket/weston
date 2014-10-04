@@ -15,6 +15,7 @@ startup-animation=fade
 #num-workspaces=6
 #cursor-theme=whiteglass
 #cursor-size=24
+#fonts=sans
 
 #lockscreen-icon=/usr/share/icons/gnome/256x256/actions/lock.png
 #lockscreen=/usr/share/backgrounds/gnome/Garden.jpg

@@ -829,6 +829,10 @@ libshared_cairo_la_SOURCES =			\
 	shared/frame.c				\
 	shared/cairo-util.h
 
+if HAVE_PANGO
+libshared_cairo_la_CFLAGS += $(PANGO_CFLAGS)
+libshared_cairo_la_LIBADD += $(PANGO_LIBS)
+endif
 
 #
 # tests subdirectory

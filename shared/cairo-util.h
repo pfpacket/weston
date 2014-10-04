@@ -53,10 +53,15 @@ struct theme {
 	int margin;
 	int width;
 	int titlebar_height;
+	struct wl_list title_fonts;
 };
 
 struct theme *
 theme_create(void);
+
+struct theme *
+theme_create_with_fonts(const char *fonts);
+
 void
 theme_destroy(struct theme *t);
 
