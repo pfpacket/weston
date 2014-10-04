@@ -289,7 +289,9 @@ main(int argc, char *argv[])
 	memset(&stacking, 0, sizeof stacking);
 
 #ifdef HAVE_PANGO
+#if !GLIB_CHECK_VERSION(2,36,0)
 	g_type_init();
+#endif
 #endif
 
 	stacking.display = display_create(&argc, argv);

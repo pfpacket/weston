@@ -1347,7 +1347,9 @@ main(int argc, char *argv[])
 	memset(&editor, 0, sizeof editor);
 
 #ifdef HAVE_PANGO
+#if !GLIB_CHECK_VERSION(2,36,0)
 	g_type_init();
+#endif
 #endif
 
 	editor.display = display_create(&argc, argv);
